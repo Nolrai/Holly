@@ -1,2 +1,3 @@
-# Holly
-2d Cellular Automata
+# holly
+
+add description of holly here
