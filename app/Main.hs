@@ -1,8 +1,14 @@
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Main (main) where
 
-import Data.String.Strip
+import Control.Monad
+-- import Data.Either
+-- import Data.String
+import Graphics.Gloss
+-- import System.Environment
+import System.IO
 
 main :: IO ()
 main = do
-  let s = "  Hello, World!  "
-  putStrLn $ strip s
+  display (InWindow "Nice Window" (200, 200) (10, 10)) blue (Circle 80)
