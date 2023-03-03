@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -14,9 +15,10 @@ import Data.Bool
 import Data.Function (($))
 import Data.Int
 import Data.Maybe
+import GHC.Generics
 import GHC.Num
-import GHC.Real (div, even, odd)
-import Prelude (Eq, Show)
+import GHC.Real (div, even, mod, odd)
+import Prelude (Bounded, Eq, Ord, Show)
 
 type UBoard = UArray (Int, Int)
 
@@ -28,9 +30,17 @@ data Box = Box
     _se :: !Bool,
     _sw :: !Bool
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord, Generic, Bounded)
 
 makeLenses ''Box
+
+-- mirror the array into a torus.
+(!^) :: IArray arr a => arr (Int, Int) a -> (Int, Int) -> a
+arr !^ (x, y) = arr ! (x', y')
+  where
+    ((xStart, yStart), (xEnd, yEnd)) = bounds arr
+    x' = xStart + (x `mod` (xEnd - xStart))
+    y' = yStart + (y `mod` (yEnd - yStart))
 
 toBoxes :: Bool -> UBoard Bool -> Maybe (BBoard Box)
 toBoxes doShift board =
@@ -45,10 +55,10 @@ toBoxes doShift board =
     list = do
       (x, y) <- Unboxed.range newBounds
       let (x', y') = if doShift then (x * 2 + 1, y * 2 + 1) else (x * 2, y * 2)
-          ne' = board ! (x', y')
-          nw' = board ! (x' - 1, y')
-          se' = board ! (x', y' - 1)
-          sw' = board ! (x' - 1, y' - 1)
+          ne' = board !^ (x', y')
+          nw' = board !^ (x' - 1, y')
+          se' = board !^ (x', y' - 1)
+          sw' = board !^ (x' - 1, y' - 1)
       pure ((x, y), Box ne' nw' se' sw')
 
 fromBoxes :: Bool -> BBoard Box -> UBoard Bool
@@ -62,7 +72,7 @@ fromBoxes doShift boxes =
     list = do
       (x, y) <- Boxed.range newBounds
       let (x', y') = if doShift then ((x - 1) `div` 2, (y - 1) `div` 2) else (x `div` 2, y `div` 2)
-          box = boxes ! (x', y')
+          box = boxes !^ (x', y')
           lens =
             case (even x, even y) of
               (True, True) -> ne
