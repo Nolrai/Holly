@@ -22,14 +22,14 @@ import Data.Maybe (Maybe (..), isJust)
 import Data.Monoid ((<>))
 import GHC.Int (Int)
 import GHC.Num ((*), (+), (-))
-import GHC.Real (mod, (^))
+import GHC.Real (div, mod, (^))
 import System.IO (IO)
 import Test.Hspec
 import Test.Hspec.SmallCheck as SC
 import Test.QuickCheck as QC
 import Test.SmallCheck as SC
 import Test.SmallCheck.Series qualified as SC
-import Prelude (Eq, Ord (..), Show (..), maxBound)
+import Prelude (Bounded, Eq, Ord (..), Show (..), maxBound, minBound)
 
 -- import Data.Monoid ((<>))
 -- import Debug.Trace (trace)
@@ -58,11 +58,11 @@ shrinkBoxSpec box = List.filter (`paretoLessThan` box) (SC.listSeries maxBound)
 paretoLessThan (Box ne nw se sw) (Box ne' nw' se' sw') =
   (ne <= ne' && nw <= nw' && se <= se' && sw <= sw') && (ne < ne' || nw < nw' || se < se' || sw < sw')
 
-instance (Arbitrary a, IArray UArray a, Show a, Eq a) => Arbitrary (UArray (Int, Int) a) where
+instance (Bounded a, Arbitrary a, IArray UArray a, Show a, Eq a) => Arbitrary (UArray (Int, Int) a) where
   arbitrary = arbitrary'
   shrink = shrink'
 
-instance (Arbitrary a, IArray Array a, Show a, Eq a) => Arbitrary (Array (Int, Int) a) where
+instance (Bounded a, Arbitrary a, IArray Array a, Show a, Eq a) => Arbitrary (Array (Int, Int) a) where
   arbitrary = arbitrary'
   shrink = shrink'
 
@@ -77,26 +77,23 @@ arbitrary' = do
   list <- vectorOf (rangeSize bounds') arbitrary
   pure $ listArray bounds' list
 
-shrink' :: (Arbitrary a, IArray arr a, Eq (arr (Int, Int) a)) => arr (Int, Int) a -> [arr (Int, Int) a]
-shrink' arr = fillArrays <> shrunkArrays
+shrink' :: forall a arr. (Bounded a, Arbitrary a, IArray arr a, Eq (arr (Int, Int) a)) => arr (Int, Int) a -> [arr (Int, Int) a]
+shrink' arr = shrunkArrays
   where
-    -- fillArrays are arrays that are the same size as the original array but with
-    -- all the elements set to minBound or maxBound
-    fillArray =
-      List.delete
-        arr
-        [ arrayList (bounds arr) (repeat minBound),
-          arrayList (bounds arr) (repeat maxBound)
-        ]
     -- shrunkArrays are arrays that are smaller than the original array
-    shrunkArray =
+    shrunkArrays :: [arr (Int, Int) a]
+    shrunkArrays =
       List.filter
-        (\newArr -> rangeSize (bounds newArr) <= arrSize)
-        [arrayList newBounds (elems arr) | newBounds <- shrinkBounds (bounds arr)]
+        (\newArr -> rangeSize (bounds newArr) < arrSize)
+        [listArray newBounds (elems arr) | newBounds <- shrinkBounds (bounds arr)]
     arrSize = rangeSize (bounds arr)
     shrinkBounds ((xStart, yStart), (xEnd, yEnd)) =
       fromStartAndSizxe <$> shrinkPair (xStart, yStart) <*> shrinkPair (xEnd - xStart, yEnd - yStart)
-    shrinkPair (x, y) = (,) <$> (x : shrink x) <*> (y : shrink y)
+    shrinkPair (x, y) = (,) <$> [x, x `div` 2] <*> [y, y `div` 2]
+
+fromStartAndSizxe :: (Int, Int) -> (Int, Int) -> ((Int, Int), (Int, Int))
+fromStartAndSizxe (xStart, yStart) (width, hight) =
+  ((xStart, yStart), (xStart + max (width - 1) 0, yStart + max (hight - 1) 0))
 
 total' :: (Eq a, Show a) => a -> Expectation
 total' x = x `shouldBe` x
@@ -125,7 +122,7 @@ spec = do
       QC.property $
         \board -> do
           size <- getSize
-          shrinkLoop size (board :: Box)
+          pure (shrinkLoop (max size 5) (board :: Box))
   describe "BBoard" $ do
     it "has an Arbitrary instance" $
       QC.property $
@@ -159,7 +156,7 @@ fromBoxesIsTheInverseOfToBoxes (doShift :: Bool) (board :: UBoard Bool) =
       newBoard = fromBoxes doShift <$> boxes
    in when
         (isJust newBoard)
-        ((boxes, newBoard) `shouldBe` (boxes, Just board))
+        (cmpr (boxes, newBoard) `shouldBe` cmpr (boxes, Just board))
 
 toBoxesIsTheInverseOfFromBoxes :: Bool -> BBoard Box -> Expectation
 toBoxesIsTheInverseOfFromBoxes (doShift :: Bool) (boxes :: BBoard Box) =
